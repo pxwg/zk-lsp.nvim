@@ -316,7 +316,6 @@ local function filter_prompt_items(state)
     items[#items + 1] = {
       text = "mode " .. mode.label .. " " .. mode.mode .. " " .. mode.desc,
       kind = "mode",
-      group = "MODE",
       mode = mode.mode,
       label = mode.label,
       desc = mode.desc,
@@ -327,7 +326,6 @@ local function filter_prompt_items(state)
   items[#items + 1] = {
     text = "filter inactive archived legacy",
     kind = "inactive",
-    group = "FILTER",
     label = "Inactive notes",
     desc = state.include_inactive and "shown: archived / legacy" or "hidden: archived / legacy",
     accent = state.include_inactive and "DiagnosticInfo" or "SnacksPickerDimmed",
@@ -336,7 +334,6 @@ local function filter_prompt_items(state)
   items[#items + 1] = {
     text = "reset defaults title active",
     kind = "reset",
-    group = "RESET",
     label = "Defaults",
     desc = "Title / active",
     accent = "SnacksPickerKeymapLhs",
@@ -350,8 +347,6 @@ local function format_filter_item(item)
   local accent = item.accent or "SnacksPickerSpecial"
   local ret = {
     { active and "● " or "○ ", active and "SnacksPickerSelected" or "SnacksPickerDimmed" },
-    { string.format("%-6s", item.group or ""), "SnacksPickerKeymapMode" },
-    { " " },
     { string.format("%-14s", item.label or ""), active and "SnacksPickerFile" or accent },
     { " " },
     { item.desc or "", "SnacksPickerDesc" },
