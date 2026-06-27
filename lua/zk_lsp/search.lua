@@ -280,7 +280,12 @@ function M.collect(mode)
   if not fields then
     util.notify(schema_err, vim.log.levels.WARN)
   end
-  local notes = enrich_notes(cli.list_notes())
+  local notes, notes_err = cli.list_notes()
+  if not notes then
+    util.notify(notes_err, vim.log.levels.ERROR)
+    return {}
+  end
+  notes = enrich_notes(notes)
   notes = filter_notes(notes, mode)
   return vim.tbl_map(function(note)
     return item_for(note, mode)

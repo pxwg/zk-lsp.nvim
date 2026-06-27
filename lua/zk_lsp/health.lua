@@ -59,6 +59,26 @@ local function check_schema()
   end
 end
 
+local function check_notes_command()
+  local search = config.get().search or {}
+  if search.enabled == false then
+    return
+  end
+
+  local ok_call, notes_or_err, err = pcall(function()
+    return require("zk_lsp.cli").notes()
+  end)
+  if not ok_call then
+    error("Failed to inspect notes: " .. tostring(notes_or_err))
+    return
+  end
+  if not notes_or_err then
+    error("Failed to inspect notes: " .. tostring(err))
+    return
+  end
+  ok("Bulk notes command available (" .. #notes_or_err .. " records)")
+end
+
 local function check_wiki(root)
   if vim.fn.isdirectory(root) == 1 then
     ok("Wiki root exists: " .. root)
@@ -133,6 +153,7 @@ function M.check()
   check_wiki(cfg.wiki_root)
   if has_executable then
     check_schema()
+    check_notes_command()
   end
   check_search()
   check_capture()

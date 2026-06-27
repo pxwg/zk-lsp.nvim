@@ -7,7 +7,7 @@ This plugin owns Neovim workflows around the executable: `:Zk` commands, Snacks 
 ## Requirements
 
 - Neovim 0.12+
-- A user-installed `zk-lsp` executable. The default command is `zk-lsp`.
+- A user-installed `zk-lsp` executable with `notes --json` support. The default command is `zk-lsp`.
 - Optional: `folke/snacks.nvim` for `:Zk search`.
 - Optional: `curl` for manual web capture and paper URL capture.
 
@@ -88,6 +88,14 @@ zk-lsp config metadata fields --json --sources
 
 Capture filters metadata through that schema. Unknown fields are skipped with a warning instead of being written into new notes.
 
+Search asks the executable for canonical note records with:
+
+```sh
+zk-lsp notes --json
+```
+
+There is no local metadata parser fallback. Older `zk-lsp` binaries without this command will fail `:checkhealth zk_lsp` and `:Zk search`.
+
 ## Commands
 
 Canonical command tree:
@@ -161,7 +169,7 @@ end, { desc = "[Z]ettel [R]emove" })
 
 ## Search Providers
 
-Executable `note-info` is the primary source. The built-in `local_note` provider adds local tags such as `#tag.foo`, note titles, and references discovered from wiki files.
+Executable `notes --json` is the primary source. The built-in `local_note` provider adds local tags such as `#tag.foo`, note titles, and references discovered from wiki files.
 
 Users can add Lua providers:
 

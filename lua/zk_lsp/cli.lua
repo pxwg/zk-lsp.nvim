@@ -256,26 +256,56 @@ function M.note_info_by_file(path)
   return M.note_info(id)
 end
 
-function M.note_paths()
-  local root = config.get().wiki_root
-  return vim.fn.globpath(vim.fs.joinpath(root, "note"), "*.typ", false, true)
+local function normalize_note_record(note)
+  if type(note) ~= "table" then
+    return nil
+  end
+  if type(note.path) == "string" and note.path ~= "" then
+    note.path = normalize_path(note.path)
+  end
+  if type(note.id) ~= "string" or note.id == "" then
+    note.id = note_id_from_path(note.path)
+  end
+  note.metadata = type(note.metadata) == "table" and note.metadata or {}
+  if not note.id or note.id == "" or not note.path or note.path == "" then
+    return nil
+  end
+  return note
 end
 
-function M.list_notes()
+function M.notes()
+  local stdout, err = run_ok({ "notes", "--json" })
+  if not stdout then
+    return nil, err
+  end
+  local decoded, decode_err = decode_json(stdout, "zk-lsp notes")
+  if not decoded then
+    return nil, decode_err
+  end
+  if type(decoded) ~= "table" then
+    return nil, "zk-lsp notes returned non-array JSON"
+  end
+
   local notes = {}
-  for _, path in ipairs(M.note_paths()) do
-    local id = note_id_from_path(path)
-    if id then
-      local note = M.note_info(id)
-      if note then
-        notes[#notes + 1] = note
-      end
+  for _, note in ipairs(decoded) do
+    local normalized = normalize_note_record(note)
+    if normalized then
+      notes[#notes + 1] = normalized
     end
   end
   table.sort(notes, function(a, b)
     return tostring(a.id) > tostring(b.id)
   end)
   return notes
+end
+
+function M.note_paths()
+  local root = config.get().wiki_root
+  return vim.fn.globpath(vim.fs.joinpath(root, "note"), "*.typ", false, true)
+end
+
+function M.list_notes()
+  return M.notes()
 end
 
 function M.metadata_fields()
