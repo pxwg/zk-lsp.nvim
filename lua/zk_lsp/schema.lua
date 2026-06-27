@@ -54,7 +54,10 @@ function M.field_map()
 end
 
 function M.filter_metadata(metadata)
-  local field_map = M.field_map() or {}
+  local field_map, err = M.field_map()
+  if not field_map then
+    return nil, {}, err
+  end
   local filtered = {}
   local skipped = {}
   for key, value in pairs(metadata or {}) do

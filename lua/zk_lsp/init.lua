@@ -18,4 +18,11 @@ function M.config()
   return require("zk_lsp.config").get()
 end
 
+function M.build(opts)
+  if opts then
+    require("zk_lsp.config").setup(opts)
+  end
+  return require("zk_lsp.install").build()
+end
+
 return M
