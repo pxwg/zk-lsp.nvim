@@ -47,9 +47,103 @@ local function note_id_from_path(path)
   return type(path) == "string" and path:match("(%d%d%d%d%d%d%d%d%d%d)%.typ$") or nil
 end
 
+local function normalize_path(path)
+  if type(path) ~= "string" or path == "" then
+    return ""
+  end
+  return vim.fs.normalize(path)
+end
+
+local function note_path(id)
+  return normalize_path(vim.fs.joinpath(config.get().wiki_root, "note", id .. ".typ"))
+end
+
+local function index_path()
+  return normalize_path(vim.fs.joinpath(config.get().wiki_root, "index.typ"))
+end
+
+local function note_id_from_buffer(bufnr)
+  return note_id_from_path(vim.api.nvim_buf_get_name(bufnr))
+end
+
 local function open_path(path)
   if path and path ~= "" then
     vim.cmd.edit(vim.fn.fnameescape(path))
+  end
+end
+
+local function resolve_note_id(id, command_name)
+  if not id or id == "" then
+    id = vim.fn.expand("<cword>")
+  end
+  if not id:match("^%d%d%d%d%d%d%d%d%d%d$") then
+    return nil, command_name .. " requires a 10-digit note id"
+  end
+  return id
+end
+
+local function buffers_for_note(id)
+  local path = note_path(id)
+  local buffers = {}
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_valid(bufnr) and normalize_path(vim.api.nvim_buf_get_name(bufnr)) == path then
+      buffers[#buffers + 1] = bufnr
+    end
+  end
+  return buffers
+end
+
+local function confirm_modified_note_buffers(id)
+  for _, bufnr in ipairs(buffers_for_note(id)) do
+    if vim.bo[bufnr].modified then
+      local is_current = bufnr == vim.api.nvim_get_current_buf()
+      local message = is_current and "Current note buffer has unsaved changes. Remove note and wipe buffer?"
+        or ("Loaded buffer for note " .. id .. " has unsaved changes. Remove note and wipe buffer?")
+      if vim.fn.confirm(message, "&Remove\n&Cancel", 2) ~= 1 then
+        return false
+      end
+    end
+  end
+  return true
+end
+
+local function fallback_buffer(exclude_bufnr, removed_path)
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    local name = normalize_path(vim.api.nvim_buf_get_name(bufnr))
+    if
+      vim.api.nvim_buf_is_loaded(bufnr)
+      and vim.bo[bufnr].buflisted
+      and bufnr ~= exclude_bufnr
+      and name ~= removed_path
+      and note_id_from_buffer(bufnr)
+      and vim.fn.filereadable(name) == 1
+    then
+      return bufnr
+    end
+  end
+
+  local index = index_path()
+  if vim.fn.filereadable(index) == 1 then
+    local bufnr = vim.fn.bufadd(index)
+    vim.fn.bufload(bufnr)
+    return bufnr
+  end
+
+  return vim.api.nvim_create_buf(true, false)
+end
+
+local function wipe_removed_note_buffers(id)
+  local removed_path = note_path(id)
+  for _, bufnr in ipairs(buffers_for_note(id)) do
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      local replacement = fallback_buffer(bufnr, removed_path)
+      for _, winid in ipairs(vim.fn.win_findbuf(bufnr)) do
+        if vim.api.nvim_win_is_valid(winid) then
+          vim.api.nvim_win_set_buf(winid, replacement)
+        end
+      end
+      pcall(vim.api.nvim_buf_delete, bufnr, { force = vim.bo[bufnr].modified })
+    end
   end
 end
 
@@ -94,13 +188,11 @@ function M.new(opts)
 end
 
 function M.remove(id)
-  if not id or id == "" then
-    id = vim.fn.expand("<cword>")
+  local resolved, parse_err = resolve_note_id(id, "remove")
+  if not resolved then
+    return nil, parse_err
   end
-  if not id:match("^%d%d%d%d%d%d%d%d%d%d$") then
-    return nil, "remove requires a 10-digit note id"
-  end
-  local stdout, err = run_ok({ "remove", id })
+  local stdout, err = run_ok({ "remove", resolved })
   if not stdout then
     return nil, err
   end
@@ -240,12 +332,22 @@ function M.dispatch(command_name, args)
     end
     open_path(note.path)
   elseif command_name == "remove" then
-    local ok, err = M.remove(args[1])
+    local id, parse_err = resolve_note_id(args[1], "remove")
+    if not id then
+      util.notify(parse_err, vim.log.levels.ERROR)
+      return
+    end
+    if not confirm_modified_note_buffers(id) then
+      util.notify("Remove cancelled")
+      return
+    end
+    local ok, err = M.remove(id)
     if not ok then
       util.notify(err, vim.log.levels.ERROR)
       return
     end
-    util.notify("Removed note " .. (args[1] or vim.fn.expand("<cword>")))
+    wipe_removed_note_buffers(id)
+    util.notify("Removed note " .. id)
   elseif command_name == "generate" then
     local stdout, err = M.generate()
     if not stdout then
