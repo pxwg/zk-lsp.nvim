@@ -48,6 +48,8 @@ require("zk_lsp").setup({
   search = {
     enabled = true,
     picker = "snacks",
+    default_mode = "title",
+    include_inactive = false,
     providers = {
       local_note = true,
     },
@@ -109,6 +111,8 @@ Canonical command tree:
 :Zk check [--no-orphans] [--no-dead-links]
 
 :Zk search
+:Zk search title
+:Zk search all
 :Zk search alias
 :Zk search keyword
 :Zk search abstract
@@ -169,7 +173,9 @@ end, { desc = "[Z]ettel [R]emove" })
 
 ## Search Providers
 
-Executable `notes --json` is the primary source. The built-in `local_note` provider adds local tags such as `#tag.foo`, note titles, and references discovered from wiki files.
+Executable `notes --json` is the primary source. Plain `:Zk search` searches note titles by default and hides `relation = "archived"` / `relation = "legacy"` notes unless `search.include_inactive = true`. Use `:Zk search all` for broad title/id/metadata/tag search.
+
+The built-in `local_note` provider adds local tags such as `#tag.foo`, note titles, and references discovered from wiki files.
 
 Users can add Lua providers:
 

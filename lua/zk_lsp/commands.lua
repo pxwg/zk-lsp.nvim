@@ -15,6 +15,8 @@ local root_commands = {
 }
 
 local search_commands = {
+  "title",
+  "all",
   "alias",
   "keyword",
   "abstract",
@@ -81,7 +83,8 @@ function M.dispatch(opts)
     call_search(args)
   elseif command == "capture" then
     call_capture(args)
-  elseif command == "new"
+  elseif
+    command == "new"
     or command == "remove"
     or command == "export"
     or command == "generate"

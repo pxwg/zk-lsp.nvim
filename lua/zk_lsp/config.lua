@@ -9,6 +9,8 @@ local defaults = {
   search = {
     enabled = true,
     picker = "snacks",
+    default_mode = "title",
+    include_inactive = false,
     providers = {
       local_note = true,
     },

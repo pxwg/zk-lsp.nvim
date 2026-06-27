@@ -5,6 +5,11 @@ local util = require("zk_lsp.util")
 
 local M = {}
 
+local INACTIVE_RELATIONS = {
+  archived = true,
+  legacy = true,
+}
+
 local function list_or_empty(value)
   return type(value) == "table" and value or {}
 end
@@ -152,9 +157,11 @@ local function enrich_notes(notes)
 end
 
 local function note_text(note, mode)
-  local parts = { note.title or "", note.id or "" }
+  local parts = {}
   local metadata = note.metadata or {}
-  if mode == "alias" then
+  if mode == "title" then
+    parts = { note.title or "" }
+  elseif mode == "alias" then
     parts = value_parts(metadata.aliases)
   elseif mode == "keyword" then
     parts = value_parts(metadata.keywords)
@@ -162,11 +169,26 @@ local function note_text(note, mode)
     parts = { metadata.abstract or "" }
   elseif mode == "tag" then
     parts = value_parts(note.tags)
-  else
+  elseif mode == "all" then
+    parts = { note.title or "", note.id or "" }
     value_parts(metadata, parts)
     value_parts(note.tags, parts)
+  else
+    parts = { note.title or "" }
   end
   return table.concat(parts, " ")
+end
+
+local function relation(note)
+  local value = get_path(note.metadata or {}, "relation") or note.relation or ""
+  if type(value) ~= "string" then
+    return ""
+  end
+  return vim.trim(value):lower()
+end
+
+local function is_inactive_note(note)
+  return INACTIVE_RELATIONS[relation(note)] == true
 end
 
 local function has_tag(note, tag)
@@ -201,6 +223,13 @@ local function orphan_notes(notes)
 end
 
 local function filter_notes(notes, mode)
+  local search_config = config.get().search or {}
+  if search_config.include_inactive ~= true then
+    notes = vim.tbl_filter(function(note)
+      return not is_inactive_note(note)
+    end, notes)
+  end
+
   if mode == "todo" then
     return vim.tbl_filter(function(note)
       return has_tag(note, "todo") or checklist_status(note) == "todo"
@@ -275,7 +304,7 @@ local function open_item(item)
 end
 
 function M.collect(mode)
-  mode = mode or "all"
+  mode = mode or config.get().search.default_mode or "title"
   local fields, schema_err = schema.fields()
   if not fields then
     util.notify(schema_err, vim.log.levels.WARN)
@@ -293,7 +322,7 @@ function M.collect(mode)
 end
 
 function M.search(mode)
-  mode = mode or "all"
+  mode = mode or config.get().search.default_mode or "title"
   if config.get().search.enabled == false then
     util.notify("Search is disabled", vim.log.levels.WARN)
     return
@@ -324,7 +353,7 @@ end
 
 function M.dispatch(args)
   local mode = args and args[1] or nil
-  M.search(mode or "all")
+  M.search(mode)
 end
 
 return M
