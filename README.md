@@ -175,6 +175,8 @@ end, { desc = "[Z]ettel [R]emove" })
 
 Executable `notes --json` is the primary source. Plain `:Zk search` searches note titles by default and hides `relation = "archived"` / `relation = "legacy"` notes unless `search.include_inactive = true`. Use `:Zk search all` for broad title/id/metadata/tag search.
 
+Inside the Snacks picker, press `<C-f>` from insert mode or `f` from normal/list mode to open the search filter prompt.
+
 The built-in `local_note` provider adds local tags such as `#tag.foo`, note titles, and references discovered from wiki files.
 
 Users can add Lua providers:

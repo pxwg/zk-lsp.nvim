@@ -10,6 +10,23 @@ local INACTIVE_RELATIONS = {
   legacy = true,
 }
 
+local SEARCH_MODES = {
+  { mode = "title", label = "Title", desc = "precise title search" },
+  { mode = "all", label = "All", desc = "title, id, metadata, and tags" },
+  { mode = "alias", label = "Alias", desc = "metadata aliases" },
+  { mode = "keyword", label = "Keyword", desc = "metadata keywords" },
+  { mode = "abstract", label = "Abstract", desc = "metadata abstracts" },
+  { mode = "tag", label = "Tag", desc = "local and provider tags" },
+  { mode = "todo", label = "Todo", desc = "todo notes by title" },
+  { mode = "done", label = "Done", desc = "done notes by title" },
+  { mode = "orphans", label = "Orphans", desc = "notes without inbound references" },
+}
+
+local MODE_BY_NAME = {}
+for _, item in ipairs(SEARCH_MODES) do
+  MODE_BY_NAME[item.mode] = item
+end
+
 local function list_or_empty(value)
   return type(value) == "table" and value or {}
 end
@@ -222,9 +239,14 @@ local function orphan_notes(notes)
   return out
 end
 
-local function filter_notes(notes, mode)
-  local search_config = config.get().search or {}
-  if search_config.include_inactive ~= true then
+local function filter_notes(notes, mode, opts)
+  opts = opts or {}
+  local include_inactive = opts.include_inactive
+  if include_inactive == nil then
+    include_inactive = (config.get().search or {}).include_inactive == true
+  end
+
+  if include_inactive ~= true then
     notes = vim.tbl_filter(function(note)
       return not is_inactive_note(note)
     end, notes)
@@ -274,6 +296,67 @@ local function item_for(note, mode)
   }
 end
 
+local function mode_label(mode)
+  return (MODE_BY_NAME[mode] and MODE_BY_NAME[mode].label) or mode or "Title"
+end
+
+local function picker_title(state)
+  local scope = state.include_inactive and "all notes" or "active"
+  return ("ZK Notes: %s / %s  Ctrl-f/f filters"):format(mode_label(state.mode), scope)
+end
+
+local function filter_prompt_items(state)
+  local items = {}
+  for _, mode in ipairs(SEARCH_MODES) do
+    items[#items + 1] = {
+      text = mode.label .. " " .. mode.mode .. " " .. mode.desc,
+      kind = "mode",
+      mode = mode.mode,
+      label = mode.label,
+      desc = mode.desc,
+      active = state.mode == mode.mode,
+    }
+  end
+  items[#items + 1] = {
+    text = "Archived legacy inactive",
+    kind = "inactive",
+    label = "Archived / legacy",
+    desc = state.include_inactive and "shown in results" or "hidden by default",
+    active = state.include_inactive,
+  }
+  items[#items + 1] = {
+    text = "Reset title active",
+    kind = "reset",
+    label = "Reset",
+    desc = "title search, active notes only",
+    active = false,
+  }
+  return items
+end
+
+local function format_filter_item(item)
+  local active = item.active == true
+  return {
+    { active and "* " or "  ", active and "SnacksPickerSpecial" or "SnacksPickerDimmed" },
+    { item.label, active and "SnacksPickerFile" or "SnacksPickerDimmed" },
+    { "  " .. item.desc, "SnacksPickerDimmed" },
+  }
+end
+
+local function apply_filter_choice(state, item)
+  if not item then
+    return
+  end
+  if item.kind == "mode" then
+    state.mode = item.mode
+  elseif item.kind == "inactive" then
+    state.include_inactive = not state.include_inactive
+  elseif item.kind == "reset" then
+    state.mode = config.get().search.default_mode or "title"
+    state.include_inactive = (config.get().search or {}).include_inactive == true
+  end
+end
+
 local function format_item(item)
   local note = item.note
   local ret = {
@@ -303,7 +386,7 @@ local function open_item(item)
   end
 end
 
-function M.collect(mode)
+function M.collect(mode, opts)
   mode = mode or config.get().search.default_mode or "title"
   local fields, schema_err = schema.fields()
   if not fields then
@@ -315,7 +398,7 @@ function M.collect(mode)
     return {}
   end
   notes = enrich_notes(notes)
-  notes = filter_notes(notes, mode)
+  notes = filter_notes(notes, mode, opts)
   return vim.tbl_map(function(note)
     return item_for(note, mode)
   end, notes)
@@ -334,21 +417,95 @@ function M.search(mode)
     return
   end
 
-  local items = M.collect(mode)
-  if #items == 0 then
-    util.notify("No notes found for search mode: " .. mode, vim.log.levels.INFO)
-    return
+  local state = {
+    mode = mode,
+    include_inactive = (config.get().search or {}).include_inactive == true,
+    query = "",
+  }
+
+  local open_picker
+  local open_filter_prompt
+
+  local function capture_query(p)
+    if p and p.input then
+      state.query = p.input:get()
+    end
   end
 
-  picker.pick({
-    title = mode == "all" and "ZK Notes" or ("ZK Notes: " .. mode),
-    items = items,
-    format = format_item,
-    confirm = function(p, item)
-      p:close()
-      open_item(item)
-    end,
-  })
+  local function reopen()
+    vim.schedule(function()
+      open_picker()
+    end)
+  end
+
+  local function close_then_filter(p)
+    capture_query(p)
+    p:close()
+    vim.schedule(function()
+      open_filter_prompt()
+    end)
+  end
+
+  open_filter_prompt = function()
+    local confirmed = false
+    picker.pick({
+      title = "ZK Search Filters",
+      layout = "select",
+      items = filter_prompt_items(state),
+      format = format_filter_item,
+      confirm = function(p, item)
+        confirmed = true
+        apply_filter_choice(state, item)
+        p:close()
+        reopen()
+      end,
+      on_close = function()
+        if not confirmed then
+          reopen()
+        end
+      end,
+    })
+  end
+
+  open_picker = function()
+    local items = M.collect(state.mode, { include_inactive = state.include_inactive })
+    if #items == 0 then
+      util.notify("No notes found for search mode: " .. state.mode, vim.log.levels.INFO)
+      return
+    end
+
+    picker.pick({
+      title = picker_title(state),
+      pattern = state.query,
+      items = items,
+      format = format_item,
+      confirm = function(p, item)
+        p:close()
+        open_item(item)
+      end,
+      win = {
+        input = {
+          keys = {
+            ["<C-f>"] = { "zk_filter_prompt", mode = { "i", "n" }, desc = "choose ZK search filter" },
+            ["f"] = { "zk_filter_prompt", mode = "n", desc = "choose ZK search filter" },
+          },
+        },
+        list = {
+          keys = {
+            ["f"] = { "zk_filter_prompt", desc = "choose ZK search filter" },
+          },
+        },
+      },
+      actions = {
+        zk_filter_prompt = {
+          desc = "choose ZK search filter",
+          action = close_then_filter,
+        },
+      },
+    })
+  end
+
+  open_picker()
 end
 
 function M.dispatch(args)
