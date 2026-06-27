@@ -1,0 +1,6 @@
+# ADR documents are local grill-with-docs discussion artifacts.
+/docs/adr/
+**/docs/adr/
+
+# Local Neovim logs from headless checks.
+nvim.log
