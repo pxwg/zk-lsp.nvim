@@ -11,15 +11,15 @@ local INACTIVE_RELATIONS = {
 }
 
 local SEARCH_MODES = {
-  { mode = "title", label = "Title", desc = "precise title search" },
-  { mode = "all", label = "All", desc = "title, id, metadata, and tags" },
-  { mode = "alias", label = "Alias", desc = "metadata aliases" },
-  { mode = "keyword", label = "Keyword", desc = "metadata keywords" },
-  { mode = "abstract", label = "Abstract", desc = "metadata abstracts" },
-  { mode = "tag", label = "Tag", desc = "local and provider tags" },
-  { mode = "todo", label = "Todo", desc = "todo notes by title" },
-  { mode = "done", label = "Done", desc = "done notes by title" },
-  { mode = "orphans", label = "Orphans", desc = "notes without inbound references" },
+  { mode = "title", label = "Title", desc = "titles only", accent = "SnacksPickerFile" },
+  { mode = "all", label = "All fields", desc = "title, id, metadata, tags", accent = "SnacksPickerSpecial" },
+  { mode = "alias", label = "Alias", desc = "metadata aliases", accent = "SnacksPickerIconString" },
+  { mode = "keyword", label = "Keyword", desc = "metadata keywords", accent = "SnacksPickerIconKey" },
+  { mode = "abstract", label = "Abstract", desc = "summaries", accent = "SnacksPickerComment" },
+  { mode = "tag", label = "Tag", desc = "local/provider tags", accent = "SnacksPickerMatch" },
+  { mode = "todo", label = "Todo", desc = "open work", accent = "DiagnosticWarn" },
+  { mode = "done", label = "Done", desc = "completed work", accent = "DiagnosticOk" },
+  { mode = "orphans", label = "Orphans", desc = "no inbound refs", accent = "DiagnosticInfo" },
 }
 
 local MODE_BY_NAME = {}
@@ -305,30 +305,41 @@ local function picker_title(state)
   return ("ZK Notes: %s / %s  Ctrl-f/f filters"):format(mode_label(state.mode), scope)
 end
 
+local function filter_prompt_title(state)
+  local scope = state.include_inactive and "inactive shown" or "inactive hidden"
+  return ("ZK Filters: %s / %s"):format(mode_label(state.mode), scope)
+end
+
 local function filter_prompt_items(state)
   local items = {}
   for _, mode in ipairs(SEARCH_MODES) do
     items[#items + 1] = {
-      text = mode.label .. " " .. mode.mode .. " " .. mode.desc,
+      text = "mode " .. mode.label .. " " .. mode.mode .. " " .. mode.desc,
       kind = "mode",
+      group = "MODE",
       mode = mode.mode,
       label = mode.label,
       desc = mode.desc,
+      accent = mode.accent,
       active = state.mode == mode.mode,
     }
   end
   items[#items + 1] = {
-    text = "Archived legacy inactive",
+    text = "filter inactive archived legacy",
     kind = "inactive",
-    label = "Archived / legacy",
-    desc = state.include_inactive and "shown in results" or "hidden by default",
+    group = "FILTER",
+    label = "Inactive notes",
+    desc = state.include_inactive and "shown: archived / legacy" or "hidden: archived / legacy",
+    accent = state.include_inactive and "DiagnosticInfo" or "SnacksPickerDimmed",
     active = state.include_inactive,
   }
   items[#items + 1] = {
-    text = "Reset title active",
+    text = "reset defaults title active",
     kind = "reset",
-    label = "Reset",
-    desc = "title search, active notes only",
+    group = "RESET",
+    label = "Defaults",
+    desc = "Title / active",
+    accent = "SnacksPickerKeymapLhs",
     active = false,
   }
   return items
@@ -336,11 +347,19 @@ end
 
 local function format_filter_item(item)
   local active = item.active == true
-  return {
-    { active and "* " or "  ", active and "SnacksPickerSpecial" or "SnacksPickerDimmed" },
-    { item.label, active and "SnacksPickerFile" or "SnacksPickerDimmed" },
-    { "  " .. item.desc, "SnacksPickerDimmed" },
+  local accent = item.accent or "SnacksPickerSpecial"
+  local ret = {
+    { active and "● " or "○ ", active and "SnacksPickerSelected" or "SnacksPickerDimmed" },
+    { string.format("%-6s", item.group or ""), "SnacksPickerKeymapMode" },
+    { " " },
+    { string.format("%-14s", item.label or ""), active and "SnacksPickerFile" or accent },
+    { " " },
+    { item.desc or "", "SnacksPickerDesc" },
   }
+  if active then
+    ret[#ret + 1] = { "  current", "SnacksPickerSelected" }
+  end
+  return ret
 end
 
 local function apply_filter_choice(state, item)
@@ -449,7 +468,7 @@ function M.search(mode)
   open_filter_prompt = function()
     local confirmed = false
     picker.pick({
-      title = "ZK Search Filters",
+      title = filter_prompt_title(state),
       layout = "select",
       items = filter_prompt_items(state),
       format = format_filter_item,
