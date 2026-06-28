@@ -57,9 +57,10 @@ _Avoid_: Parser, backend, indexer
 - The plugin does not install or manage the `zk-lsp` executable. Users configure `executable`, defaulting to `zk-lsp`.
 - `setup()` owns the canonical `:Zk` command tree, search, capture, browser host installation, and note-reference extmarks. It does not configure LSP clients, formatters, or keymaps.
 - Search is provider-based. Executable note info is primary; local Lua providers may add structured fields such as local tags. Picker UI is currently Snacks-only.
-- Capture creates notes through `zk-lsp new --json`. The plugin filters capture metadata through the executable-reported metadata schema and does not parse `zk-lsp.toml` itself.
+- Capture creates notes through `zk-lsp new --json`, then normalizes the generated note so captured title/content are present even when the user's note template does not render those JSON fields. The plugin filters capture metadata through the executable-reported metadata schema and does not parse `zk-lsp.toml` itself.
 - `schema-version` is executable-owned output metadata. The plugin does not send it as `new --json` input.
 - Browser Capture ships as an unpacked Chrome extension plus a Native Messaging host. The extension downloads browser-accessible PDFs with Chrome and sends the completed file path to a one-shot headless Neovim host.
 - Browser page capture sends page metadata from Chrome; the native host does not fetch browser URLs. Manual web capture and paper URL capture may still fetch URLs with `curl`.
+- Captured PDF note metadata records both the source URL and the wiki-relative PDF asset path in `user.source` when both exist.
 - Bibliography support is internal to capture. Missing `ref.bib` is created, and the default declaration is appended to `index.typ` as `#bibliography("ref.bib")`.
 - ADR notes are local planning artifacts and are intentionally not tracked by git.

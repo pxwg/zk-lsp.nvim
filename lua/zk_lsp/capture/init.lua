@@ -100,6 +100,27 @@ local function flatten_metadata(metadata, prefix, out)
   return out
 end
 
+local function source_list(source)
+  local result = {}
+  local seen = {}
+  local function add(value)
+    value = trim(value)
+    if value ~= "" and not seen[value] then
+      seen[value] = true
+      result[#result + 1] = value
+    end
+  end
+
+  if type(source) == "table" then
+    for _, value in ipairs(source) do
+      add(value)
+    end
+  else
+    add(source)
+  end
+  return result
+end
+
 local function base_metadata(capture_type, source, extra)
   extra = extra or {}
   local metadata = {
@@ -113,7 +134,7 @@ local function base_metadata(capture_type, source, extra)
     ["user.public"] = true,
     ["user.ai-generated"] = false,
     ["user.captured"] = true,
-    ["user.source"] = source and source ~= "" and { source } or {},
+    ["user.source"] = source_list(source),
     ["user.capture-type"] = capture_type,
     ["user.frs"] = false,
     ["user.project"] = "",
@@ -139,6 +160,146 @@ local function warn_skipped(skipped)
   if skipped and #skipped > 0 then
     util.notify("Skipped unsupported metadata fields: " .. table.concat(skipped, ", "), vim.log.levels.WARN)
   end
+end
+
+local function title_heading(title, id)
+  title = collapse_ws(title)
+  if title == "" then
+    return "= <" .. id .. ">"
+  end
+  return "= " .. title .. " <" .. id .. ">"
+end
+
+local function find_note_heading(lines, id)
+  local escaped = vim.pesc(id or "")
+  for index, line in ipairs(lines) do
+    if line:match("^=%s*.-<" .. escaped .. ">%s*$") then
+      return index
+    end
+  end
+  for index, line in ipairs(lines) do
+    if line:match("^=%s+") then
+      return index
+    end
+  end
+  return nil
+end
+
+local function content_insert_index(lines, heading_index)
+  local index = heading_index + 1
+  while lines[index] == "" do
+    index = index + 1
+  end
+  if lines[index] and lines[index]:match("^#status_tag%(") then
+    return index + 1
+  end
+  return heading_index + 1
+end
+
+local function normalize_created_note(path, id, title, content)
+  if not path or path == "" or vim.fn.filereadable(path) == 0 then
+    return nil, "created note is not readable: " .. tostring(path)
+  end
+  if not id or id == "" then
+    return nil, "created note path did not include a note id: " .. path
+  end
+  local lines = vim.fn.readfile(path)
+  local heading_index = find_note_heading(lines, id)
+  if not heading_index then
+    return nil, "created note has no title heading: " .. path
+  end
+
+  lines[heading_index] = title_heading(title, id)
+  content = trim(content)
+  if content ~= "" and not table.concat(lines, "\n"):find(content, 1, true) then
+    local insert_at = content_insert_index(lines, heading_index)
+    local block = vim.split(content, "\n", { plain = true })
+    table.insert(block, 1, "")
+    for offset, line in ipairs(block) do
+      table.insert(lines, insert_at + offset - 1, line)
+    end
+  end
+
+  local ok, err = pcall(vim.fn.writefile, lines, path)
+  if not ok then
+    return nil, tostring(err)
+  end
+  return true
+end
+
+local function toml_string(value)
+  return '"' .. tostring(value):gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n") .. '"'
+end
+
+local function toml_array(values)
+  local encoded = {}
+  for _, value in ipairs(values) do
+    encoded[#encoded + 1] = toml_string(value)
+  end
+  return "[" .. table.concat(encoded, ", ") .. "]"
+end
+
+local function toml_block_range(lines)
+  local start_line = nil
+  for index, line in ipairs(lines) do
+    if not start_line and line:match("^%s*```toml%s*$") then
+      start_line = index
+    elseif start_line and line:match("^%s*```%.text%s*,?%s*$") then
+      return start_line + 1, index - 1
+    end
+  end
+  return nil, nil
+end
+
+local function rewrite_note_source(path, sources)
+  sources = source_list(sources)
+  local filtered, skipped, filter_err = filter_metadata({ ["user.source"] = sources })
+  if not filtered then
+    return nil, filter_err
+  end
+  if filtered["user.source"] == nil then
+    warn_skipped(skipped)
+    return true, skipped
+  end
+
+  local lines = vim.fn.readfile(path)
+  local toml_start, toml_end = toml_block_range(lines)
+  if not toml_start then
+    return nil, "created note has no TOML metadata block: " .. path
+  end
+
+  local user_start = nil
+  local source_line = nil
+  for index = toml_start, toml_end do
+    local line = lines[index]
+    if line:match("^%s*%[user%]%s*$") then
+      user_start = index
+    elseif user_start and index > user_start and line:match("^%s*%[.+%]%s*$") then
+      break
+    elseif user_start and line:match("^%s*source%s*=") then
+      source_line = index
+      break
+    end
+  end
+
+  local replacement = "  source = " .. toml_array(filtered["user.source"])
+  if source_line then
+    lines[source_line] = (lines[source_line]:match("^(%s*)") or "  ")
+      .. "source = "
+      .. toml_array(filtered["user.source"])
+  elseif user_start then
+    table.insert(lines, user_start + 1, replacement)
+  else
+    table.insert(lines, toml_end + 1, "  [user]")
+    table.insert(lines, toml_end + 2, replacement)
+  end
+
+  local ok, err = pcall(vim.fn.writefile, lines, path)
+  if not ok then
+    return nil, tostring(err)
+  end
+  warn_skipped(skipped)
+  return true, skipped
 end
 
 local function merge_note(base, patch)
@@ -190,6 +351,16 @@ local function create_note(kind, note, payload)
   })
   if not created then
     return nil, err
+  end
+  local normalized, normalize_err = normalize_created_note(created.path, created.id, note.title, note.content)
+  if not normalized then
+    return nil, normalize_err
+  end
+  if note.metadata and note.metadata["user.source"] ~= nil then
+    local source_ok, source_err = rewrite_note_source(created.path, note.metadata["user.source"])
+    if not source_ok then
+      return nil, source_err
+    end
   end
 
   local result = {
@@ -399,6 +570,18 @@ local function append_entry(entry, target_rel)
   return key
 end
 
+local function entry_sources(entry)
+  local sources = {}
+  if entry then
+    sources[#sources + 1] = bib.field(entry, "url")
+    sources[#sources + 1] = bib.field(entry, "file")
+  end
+  if #source_list(sources) == 0 then
+    sources[#sources + 1] = bib.entry_primary_source(entry)
+  end
+  return source_list(sources)
+end
+
 function M.capture_pdf_file(payload)
   payload = payload or {}
   local source_path = vim.fs.normalize(vim.fn.expand(trim(payload.path or payload.file or payload.filename or "")))
@@ -463,11 +646,10 @@ function M.capture_pdf_file(payload)
     end
   end
 
-  local source_for_metadata = source_url ~= "" and source_url or source_path
   local note = {
     title = title,
     content = table.concat({ "#tag.capture", "", "Source: @" .. key }, "\n"),
-    metadata = base_metadata("paper", source_for_metadata, {
+    metadata = base_metadata("paper", source_url ~= "" and { source_url } or {}, {
       abstract = fields.abstract or payload.abstract or "",
       keywords = split_keywords(fields.keywords or payload.keywords or {}),
       metadata = payload.extra_metadata or payload.metadata,
@@ -488,6 +670,11 @@ function M.capture_pdf_file(payload)
   end
 
   local target_rel = rel_to_wiki(target)
+  ok, err = rewrite_note_source(result.note_path, { source_url, target_rel })
+  if not ok then
+    return nil, err
+  end
+
   if reused_entry then
     if bib.field(reused_entry, "file") == "" then
       ok, err = bib.set_entry_field(key, "file", target_rel)
@@ -582,7 +769,7 @@ function M.paper_note_from_ref(key)
   result, err = create_note("paper", {
     title = title,
     content = table.concat({ "#tag.capture", "", "Source: @" .. key }, "\n"),
-    metadata = base_metadata("paper", bib.entry_primary_source(entry), {
+    metadata = base_metadata("paper", entry_sources(entry), {
       abstract = bib.field(entry, "abstract"),
       keywords = bib.split_words(bib.field(entry, "keywords")),
     }),

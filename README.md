@@ -212,7 +212,7 @@ Provider `tags` are top-level search/filter tags. Provider metadata is merged wi
 
 ## Capture
 
-All note creation goes through `zk-lsp new --json`.
+All note creation goes through `zk-lsp new --json`. Capture then normalizes the generated note so the captured title becomes the note heading and the capture body is present even when the user's `new_note.template` does not render JSON `title` / `content`.
 
 ### Web
 
@@ -246,7 +246,7 @@ PDF files are copied or moved into:
 assets/{note-id}-pdf/
 ```
 
-and the BibTeX entry receives a `file = {...}` field pointing at the wiki-relative asset path.
+and the BibTeX entry receives a `file = {...}` field pointing at the wiki-relative asset path. The note metadata `user.source` contains both the source URL and the wiki-relative asset path when both are available.
 
 ### Browser Capture
 
