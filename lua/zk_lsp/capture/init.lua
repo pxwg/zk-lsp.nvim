@@ -438,17 +438,29 @@ function M.capture_pdf_file(payload)
     url = source_url,
     entry = parsed,
   })
+  local reused_entry = nil
+  local reused_reason = nil
   if duplicate then
     local matches = bib.find_source_notes(duplicate.key)
-    return {
-      ok = true,
-      status = "exists",
-      kind = "paper",
-      key = duplicate.key,
-      matched_by = reason,
-      note_path = matches[1] or "",
-      ref_path = bib.bib_path(),
-    }
+    if #matches > 0 then
+      return {
+        ok = true,
+        status = "exists",
+        kind = "paper",
+        key = duplicate.key,
+        matched_by = reason,
+        note_path = matches[1],
+        ref_path = bib.bib_path(),
+      }
+    end
+
+    reused_entry = duplicate
+    reused_reason = reason
+    key = duplicate.key
+    fields = vim.tbl_deep_extend("keep", fields, vim.deepcopy(duplicate.fields or {}))
+    if title == "" then
+      title = bib.clean_title(fields.title or "")
+    end
   end
 
   local source_for_metadata = source_url ~= "" and source_url or source_path
@@ -476,16 +488,27 @@ function M.capture_pdf_file(payload)
   end
 
   local target_rel = rel_to_wiki(target)
-  key, err = append_entry({
-    type = parsed and parsed.type or "misc",
-    key = key,
-    fields = fields,
-  }, target_rel)
-  if not key then
-    return nil, err
+  if reused_entry then
+    if bib.field(reused_entry, "file") == "" then
+      ok, err = bib.set_entry_field(key, "file", target_rel)
+      if not ok then
+        return nil, err
+      end
+    end
+  else
+    key, err = append_entry({
+      type = parsed and parsed.type or "misc",
+      key = key,
+      fields = fields,
+    }, target_rel)
+    if not key then
+      return nil, err
+    end
   end
 
   result.key = key
+  result.reused_bib_entry = reused_entry ~= nil
+  result.matched_by = reused_reason
   result.asset_path = target
   result.asset_rel = target_rel
   result.ref_path = bib.bib_path()
