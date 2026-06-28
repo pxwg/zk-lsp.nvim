@@ -27,6 +27,25 @@ local function sh_quote(value)
   return "'" .. tostring(value):gsub("'", "'\\''") .. "'"
 end
 
+local function resolve_native_executable(executable)
+  if type(executable) ~= "string" or executable == "" then
+    return nil, "executable is required"
+  end
+  if executable:match("[/\\]") then
+    local expanded = vim.fs.normalize(vim.fn.expand(executable))
+    if vim.fn.executable(expanded) ~= 1 then
+      return nil, "Executable not found or not executable: " .. expanded
+    end
+    return expanded
+  end
+
+  local resolved = vim.fn.exepath(executable)
+  if resolved == "" then
+    return nil, "Executable not found in Neovim PATH: " .. executable
+  end
+  return vim.fs.normalize(resolved)
+end
+
 function M.plugin_root()
   local source = debug.getinfo(1, "S").source:gsub("^@", "")
   return vim.fs.dirname(vim.fs.dirname(vim.fs.dirname(source)))
@@ -84,8 +103,12 @@ function M.build()
   end
 
   local cfg = config.get()
+  local executable, executable_err = resolve_native_executable(cfg.executable)
+  if not executable then
+    return nil, executable_err
+  end
   local native_config = {
-    executable = cfg.executable,
+    executable = executable,
     wiki_root = cfg.wiki_root,
     plugin_root = root,
     capture = serializable_capture_config(),

@@ -35,7 +35,9 @@ return {
 }
 ```
 
-`build()` prepares the native-host launcher/config used by Browser Capture. The Chrome manifest still has to be installed with `:Zk capture install-native-host {extension_id}` because Chrome assigns the extension ID after loading the unpacked extension.
+`build()` prepares the native-host launcher/config used by Browser Capture. It resolves `executable` to an absolute path because Chrome's native messaging host does not inherit an interactive shell `PATH`. If Neovim cannot see the binary, set `executable` to an absolute path such as `vim.fn.expand("~/.local/bin/zk-lsp")`.
+
+The Chrome manifest still has to be installed with `:Zk capture install-native-host {extension_id}` because Chrome assigns the extension ID after loading the unpacked extension.
 
 ## Configuration
 
@@ -256,6 +258,8 @@ The Chrome extension is shipped in this repository under `chrome/zk-capture`.
 4. Use the extension popup or context menus.
 
 For PDFs, Chrome performs the download with the browser session/cookies, then sends the completed local file path to a one-shot headless Neovim native host. The host moves the file into wiki assets and creates the note.
+
+If Chrome downloads the PDF but no note is created, run `:Zk capture install-native-host {extension_id}` again from a Neovim session that can run the configured `executable`, or configure `executable` as an absolute path.
 
 For pages, Chrome extracts page metadata and sends it to the host. The host does not fetch the browser URL again.
 
