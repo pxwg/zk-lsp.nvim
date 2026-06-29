@@ -9,7 +9,8 @@ This plugin owns Neovim workflows around the executable: `:Zk` commands, Snacks 
 - Neovim 0.12+
 - A user-installed `zk-lsp` executable with `notes --json` support. The default command is `zk-lsp`.
 - Optional: `folke/snacks.nvim` for `:Zk search`.
-- Optional: `curl` for manual web capture and paper URL capture.
+- Optional: `curl` for manual web capture, paper URL capture, and bibliography metadata translators.
+- Optional: `pdftotext` for DOI/arXiv identifier extraction from local PDFs.
 
 ## Install
 
@@ -68,6 +69,15 @@ require("zk_lsp").setup({
       declare = {
         enabled = true,
         file = "index.typ",
+      },
+      translators = {
+        enabled = true,
+        timeout = 12,
+        arxiv = true,
+        crossref = true,
+        generic_html = true,
+        pdf_text = true,
+        pdf_text_pages = 3,
       },
     },
     browser = {
@@ -248,6 +258,8 @@ assets/{note-id}-pdf/
 
 and the BibTeX entry receives a `file = {...}` field pointing at the wiki-relative asset path. The note metadata `user.source` contains both the source URL and the wiki-relative asset path when both are available.
 
+Paper capture runs a Zotero-like metadata translator pipeline before writing `ref.bib`. It tries explicit BibTeX, arXiv IDs, DOI/Crossref, generic citation metadata from browser pages, and DOI/arXiv IDs extracted from the first PDF pages with `pdftotext`. If no translator returns metadata, capture falls back to the previous minimal `@misc` entry with `title`, `url`, and `file`. Existing BibTeX entries are matched by key, DOI, arXiv eprint, URL, or file and are enriched with missing fields when a later capture finds better metadata.
+
 ### Browser Capture
 
 The Chrome extension is shipped in this repository under `chrome/zk-capture`.
@@ -261,7 +273,7 @@ For PDFs, Chrome performs the download with the browser session/cookies, then se
 
 If Chrome downloads the PDF but no note is created, run `:Zk capture install-native-host {extension_id}` again from a Neovim session that can run the configured `executable`, or configure `executable` as an absolute path.
 
-For pages, Chrome extracts page metadata and sends it to the host. The host does not fetch the browser URL again.
+For pages, Chrome extracts page metadata and sends it to the host. The host does not fetch the browser URL again. When capturing a PDF link from a page, Chrome also sends the source page's citation metadata so the paper translator can use publisher-provided `citation_*`, Dublin Core, OpenGraph, and JSON-LD fields.
 
 ## Capture Hooks
 

@@ -124,6 +124,22 @@ local function check_capture()
     ok("curl is available for manual web/paper URL capture")
   end
 
+  local translators = (capture.bibliography or {}).translators or {}
+  if translators.enabled ~= false then
+    if vim.fn.executable("curl") == 1 then
+      ok("curl is available for bibliography metadata translators")
+    else
+      warn("curl is not available; arXiv/Crossref bibliography translators will be skipped")
+    end
+    if translators.pdf_text ~= false then
+      if vim.fn.executable("pdftotext") == 1 then
+        ok("pdftotext is available for PDF identifier extraction")
+      else
+        info("pdftotext is not available; PDF identifier extraction will use URL/title metadata only")
+      end
+    end
+  end
+
   if capture.browser and capture.browser.enabled ~= false then
     local install = require("zk_lsp.install")
     local ext = install.extension_path()

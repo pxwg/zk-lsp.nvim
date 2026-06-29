@@ -3,6 +3,7 @@ local cli = require("zk_lsp.cli")
 local config = require("zk_lsp.config")
 local http = require("zk_lsp.http")
 local schema = require("zk_lsp.schema")
+local translator = require("zk_lsp.translator")
 local util = require("zk_lsp.util")
 
 local M = {}
@@ -570,6 +571,47 @@ local function append_entry(entry, target_rel)
   return key
 end
 
+local function weak_title(value)
+  value = collapse_ws(value)
+  if value == "" then
+    return true
+  end
+  return bib.extract_arxiv_id(value) ~= nil
+    or value:lower():match("^paper$") ~= nil
+    or value:lower():match("%.pdf$") ~= nil
+end
+
+local function should_replace_field(name, current, incoming)
+  current = collapse_ws(current)
+  incoming = collapse_ws(incoming)
+  if incoming == "" then
+    return false
+  end
+  if current == "" then
+    return true
+  end
+  if name == "title" and weak_title(current) and not weak_title(incoming) then
+    return true
+  end
+  return false
+end
+
+local function enrich_existing_entry(existing, incoming)
+  if not existing or not incoming then
+    return true
+  end
+  for name, value in pairs(incoming.fields or {}) do
+    if should_replace_field(name, bib.field(existing, name), value) then
+      local ok, err = bib.set_entry_field(existing.key, name, value)
+      if not ok then
+        return nil, err
+      end
+      existing.fields[name] = value
+    end
+  end
+  return true
+end
+
 local function entry_sources(entry)
   local sources = {}
   if entry then
@@ -594,10 +636,30 @@ function M.capture_pdf_file(payload)
     return nil, err
   end
 
-  local parsed = payload.bibtex and bib.parse_entry(payload.bibtex) or nil
+  local source_url = trim(payload.source_url or payload.sourceUrl or payload.url or "")
+  local resolved, resolve_warnings = translator.resolve({
+    bibtex = payload.bibtex,
+    url = source_url,
+    source_url = source_url,
+    title = payload.title,
+    file = source_path,
+    metadata = payload.extra_metadata or payload.metadata,
+    html = payload.html,
+  })
+  for _, warning in ipairs(resolve_warnings or {}) do
+    util.notify("Metadata translator skipped: " .. warning, vim.log.levels.DEBUG)
+  end
+
+  local parsed = resolved and resolved.entry or (payload.bibtex and bib.parse_entry(payload.bibtex)) or nil
   local fields = vim.deepcopy((parsed and parsed.fields) or {})
-  local source_url = trim(payload.source_url or payload.sourceUrl or payload.url or fields.url or "")
+  source_url = source_url ~= "" and source_url or trim(fields.url or "")
   local title = collapse_ws(payload.title)
+  if parsed then
+    local entry_title = bib.clean_title(fields.title or "")
+    if entry_title ~= "" and (title == "" or weak_title(title)) then
+      title = entry_title
+    end
+  end
   if title == "" then
     title = bib.clean_title(fields.title or "")
   end
@@ -624,6 +686,12 @@ function M.capture_pdf_file(payload)
   local reused_entry = nil
   local reused_reason = nil
   if duplicate then
+    ok, err = enrich_existing_entry(duplicate, {
+      fields = fields,
+    })
+    if not ok then
+      return nil, err
+    end
     local matches = bib.find_source_notes(duplicate.key)
     if #matches > 0 then
       return {
@@ -696,6 +764,7 @@ function M.capture_pdf_file(payload)
   result.key = key
   result.reused_bib_entry = reused_entry ~= nil
   result.matched_by = reused_reason
+  result.translator = resolved and resolved.translator or nil
   result.asset_path = target
   result.asset_rel = target_rel
   result.ref_path = bib.bib_path()

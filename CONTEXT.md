@@ -62,5 +62,5 @@ _Avoid_: Parser, backend, indexer
 - Browser Capture ships as an unpacked Chrome extension plus a Native Messaging host. The extension downloads browser-accessible PDFs with Chrome and sends the completed file path to a one-shot headless Neovim host.
 - Browser page capture sends page metadata from Chrome; the native host does not fetch browser URLs. Manual web capture and paper URL capture may still fetch URLs with `curl`.
 - Captured PDF note metadata records both the source URL and the wiki-relative PDF asset path in `user.source` when both exist.
-- Bibliography support is internal to capture. Missing `ref.bib` is created, and the default declaration is appended to `index.typ` as `#bibliography("ref.bib")`.
+- Bibliography support is internal to capture. A Zotero-like translator layer enriches paper captures from explicit BibTeX, arXiv IDs, DOI/Crossref, generic citation metadata, and optional PDF text identifiers before falling back to a minimal entry. Missing `ref.bib` is created, and the default declaration is appended to `index.typ` as `#bibliography("ref.bib")`.
 - ADR notes are local planning artifacts and are intentionally not tracked by git.

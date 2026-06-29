@@ -229,6 +229,10 @@ local function normalize_doi(value)
   return value:lower()
 end
 
+function M.normalize_doi(value)
+  return normalize_doi(value)
+end
+
 local function normalize_url(value)
   value = trim(value or "")
   value = value:gsub("%s+", "")
@@ -258,13 +262,22 @@ local function normalize_arxiv_id(value)
   return value:lower()
 end
 
+function M.normalize_arxiv_id(value)
+  return normalize_arxiv_id(value)
+end
+
 function M.extract_arxiv_id(value)
   value = trim(value or "")
-  return value:match("arxiv%.org/abs/([^?#/]+)")
-    or value:match("arxiv%.org/pdf/([^?#/]+)%.pdf")
+  local id = value:match("arxiv%.org/abs/([^?#%s]+)")
+    or value:match("arxiv%.org/pdf/([^?#%s]+)")
     or value:match("^arXiv:(.+)$")
     or value:match("^arxiv:(.+)$")
-    or value:match("10%.48550/arXiv%.([^%s}]+)")
+    or value:match("10%.48550/arXiv%.([^%s}%]%)>,]+)")
+  if not id then
+    return nil
+  end
+  id = id:gsub("%.pdf$", "")
+  return id
 end
 
 function M.find_entry_by_key(key, opts)

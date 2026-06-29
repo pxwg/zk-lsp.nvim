@@ -28,6 +28,15 @@ local defaults = {
         enabled = true,
         file = "index.typ",
       },
+      translators = {
+        enabled = true,
+        timeout = 12,
+        arxiv = true,
+        crossref = true,
+        generic_html = true,
+        pdf_text = true,
+        pdf_text_pages = 3,
+      },
     },
     browser = {
       enabled = true,

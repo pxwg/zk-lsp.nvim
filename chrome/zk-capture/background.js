@@ -37,7 +37,25 @@ async function getPageData(tabId) {
       target: { tabId },
       func: () => {
         const meta = (selector) => document.querySelector(selector)?.getAttribute("content") || "";
+        const allMeta = {};
+        for (const node of document.querySelectorAll("meta[name], meta[property], meta[itemprop]")) {
+          const key = node.getAttribute("name") || node.getAttribute("property") || node.getAttribute("itemprop");
+          const value = node.getAttribute("content") || "";
+          if (!key || !value) continue;
+          const normalized = key.toLowerCase();
+          if (allMeta[normalized] === undefined) {
+            allMeta[normalized] = value;
+          } else if (Array.isArray(allMeta[normalized])) {
+            allMeta[normalized].push(value);
+          } else {
+            allMeta[normalized] = [allMeta[normalized], value];
+          }
+        }
         const canonical = document.querySelector("link[rel='canonical']")?.href || "";
+        const jsonLd = Array.from(document.querySelectorAll("script[type='application/ld+json']"))
+          .map((node) => node.textContent || "")
+          .filter(Boolean)
+          .slice(0, 5);
         return {
           title: document.title || "",
           selection: window.getSelection()?.toString() || "",
@@ -48,6 +66,8 @@ async function getPageData(tabId) {
           twitterTitle: meta("meta[name='twitter:title']"),
           twitterDescription: meta("meta[name='twitter:description']"),
           canonicalUrl: canonical,
+          meta: allMeta,
+          jsonLd,
           url: location.href,
         };
       },
@@ -122,20 +142,22 @@ function downloadPdf(url, title = "") {
   });
 }
 
-async function capturePdfUrl(url, title = "") {
+async function capturePdfUrl(url, title = "", tab = null) {
+  const page = tab?.id ? await getPageData(tab.id) : {};
   const downloaded = await downloadPdf(url, title);
   const response = await sendNative({
     action: "capturePdfFile",
     path: downloaded.path,
     sourceUrl: downloaded.finalUrl,
     title,
+    metadata: page,
   });
   report(response, "PDF captured");
   return response;
 }
 
 async function captureActivePdf(tab) {
-  return capturePdfUrl(tab.url, tab.title || "");
+  return capturePdfUrl(tab.url, tab.title || "", tab);
 }
 
 async function captureAuto(tab) {
@@ -163,7 +185,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "zk-capture-page" && tab) {
       await capturePage(tab);
     } else if (info.menuItemId === "zk-capture-link-pdf" && info.linkUrl) {
-      await capturePdfUrl(info.linkUrl, info.selectionText || tab?.title || "");
+      await capturePdfUrl(info.linkUrl, info.selectionText || tab?.title || "", tab);
     }
   } catch (error) {
     notify("ZK Capture failed", error.message);
